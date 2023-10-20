@@ -1,0 +1,208 @@
+---
+title: "定量分析第一次作业"
+author: "刘杨"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    includes:
+      in_header: header.tex
+      fig_caption: yes
+    latex_engine: xelatex
+    
+---
+
+```{r setup, include = FALSE,echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE,error = FALSE, warning = FALSE, message = FALSE,
+                      out.width = "100%", split = FALSE, fig.align = "center")
+#load library
+library(tidyverse)
+library(nycflights13)
+library(dplyr)
+library(tibble)
+library(kableExtra)
+```
+
+# 你的主要发现
+
+1. 发现1：建筑形式影响房屋单价。
+
+1. 发现2：不同区域间房屋单价相差较大。
+  
+1. 发现3：人们似乎更关注靠近地铁的房子。
+
+# 数据介绍
+
+本报告**链家**数据获取方式如下：
+    
+报告人在2023年9月12日获取了[链家武汉二手房网站](https://wh.lianjia.com/ershoufang/)数据。
+    
+- 链家二手房网站默认显示100页，每页30套房产，因此本数据包括3000套房产信息；
+
+    
+- 数据包括了页面可见部分的文本信息，具体字段及说明见作业说明。
+
+ **说明：**数据仅用于教学；由于不清楚链家数据的展示规则，因此数据可能并不是武汉二手房市场的随机抽样，结论很可能有很大的偏差，甚至可能是错误的。
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# 载入数据和预处理
+lj<- read_csv("C:/Users/25179/Desktop/武大课程/S1E2_商务与经济统计_陈文波/1st_assignment_eda-aspirin1043-main/data/2023-09-12_cleaned.csv")
+lj
+# EDA ---------------------------------------------------------------------
+```
+
+# 数据概览
+
+数据表（lj)共包括`r names(lj)`等`r ncol(lj)`个变量,共`r nrow(lj)`行。表的前10行示例如下：
+
+```{r include=FALSE}
+lj_01 <- lj %>%
+  rename(
+    "小区名字" = property_name,
+    "所处区域" = property_region,
+    "房屋总价" = price_ttl,
+    "房屋单价" = price_sqm,
+    "房间数" = bedrooms,
+    "客厅数" = livingrooms,
+    "建筑面积" = building_area,
+    "主要朝向" = directions1,
+    "次要朝向" = directions2,
+    "装修状况" = decoration,
+    "总层数" = property_t_height,
+    "所在楼层" = property_height,
+    "建筑形式" = property_style,
+    "关注人数" = followers,
+    "靠近地铁" = near_subway,
+    "满2年" = if_2y,
+    "中介有钥匙" = has_key,
+    "VR看房" = vr
+  )
+```
+
+```{r echo=FALSE}
+lj_01 %>% 
+  head(10) %>%
+  kable(caption = "武汉链家二手房", escape = T) %>% 
+  kable_styling(font_size= 6, full_width = F)
+```
+
+各变量的简短信息：
+```{r echo=FALSE}
+glimpse(lj_01)
+```
+
+各变量的简短统计：
+```{r echo=FALSE}
+summary(lj_01)
+```
+
+
+可以看到：
+
+- 直观结论1
+
+通过查看房屋单价的分布情况，最小值为1771元，最大值为44656元，说明房价波动较大；平均房价为15148元，中位数为14404元，平均值大于中位数，说明房价整体偏高，同时从分布形态来看整个数据可能呈右偏分布。此外，第三个四分位数为18211元，说明约75%的房屋单价在18211元以下。
+
+- 直观结论2
+
+大部分房间的数量为2-3间，客厅数为1间左右；大部分房屋的建筑面积在95.55至100.87平米之间；楼栋的总层数偏低。
+
+
+# 探索性分析
+
+## 房屋单价的数值描述与图形
+
+房屋单价最小值为1771元，最大值为44656元，平均房价为15148元，中位数是14404元，第一个四分位数为10799元，第三个四分位数为18211元，方差6323。
+
+```{r include=FALSE}
+summary(lj_01$房屋单价)
+sd(lj_01$房屋单价)
+```
+
+```{r echo=FALSE}
+ggplot(lj_01, aes(x= 房屋单价))+
+  geom_boxplot()
+```
+
+## 各区域的房屋数量统计描述与图形
+
+```{r include=FALSE}
+property_region_count <- lj %>%
+  group_by(property_region) %>%
+  summarise(count = n())
+```
+我们筛选各区域房屋数量发现，房屋数量最多的区域在白沙洲附近，如下图展示排名靠前的十大区域。
+```{r echo=FALSE}
+# 展示前十大区域
+top10_property_region <- top_n(property_region_count, n=10, wt=count) %>%
+  arrange(desc(count))
+ggplot(top10_property_region, mapping=aes(x=count ,y= property_region))+
+  geom_bar(stat = "identity")
+```
+
+## 不同建筑形式的数值描述与图形
+
+在3000个数据中，除72个房屋暂无相关数据外，我们发现数量最少的类型是平房只有5间，数量最多的类型是板房，共有1781个。各类占比如下图。
+
+```{r include=FALSE}
+property_style_count <- lj %>%
+  group_by(property_style) %>%
+  summarise(count = n())
+```
+
+```{r echo=FALSE}
+
+Label_value = as.vector(property_style_count$property_style)
+Label_value = paste(Label_value,'(', round(property_style_count$count/3000 * 100, 1), '%)', sep = '')
+pi = ggplot(property_style_count,
+       aes(x="", y= count, fill = property_style))+ ## x="" 是关键
+  geom_bar(stat = 'identity', position = 'stack', width = 1)+
+  coord_polar(theta = "y") +
+  labs(x = "", y = "", title = "") + ## 将外围标签设为空
+  theme(axis.ticks = element_blank()) + 
+  theme(legend.title = element_blank()) +
+  theme(axis.text.x = element_blank()) +
+  theme(panel.grid=element_blank()) + ##去掉白色圆框和中间的坐标线
+  theme(panel.border=element_blank())+   ## 去掉最外层正方形的框框
+  scale_fill_discrete(
+    breaks= property_style_count$property_style,
+    labels = Label_value)##将原来的图例标签换成现在的Label_value!!!对应的关键一步！！
+
+pi
+```
+
+## 探索问题1：房屋单价与建筑形式存在什么关系？
+
+剔除房屋类型是“暂无数据”的行形成新表lj_02，以该表为基础，画出建筑形式和房屋单价关系的箱线图。从大部分的数据来看，平房的单价最低，板塔结合的房屋单价最高，板楼和塔楼居于二者之间。
+```{r echo=FALSE}
+lj_02 <- lj[lj$property_style != "暂无数据", ]
+
+region_count <- lj_02 %>%
+  group_by(property_style) %>%
+  summarise(count = n())
+
+ggplot(lj_02, aes(x=property_style , y=price_sqm ))+
+  geom_boxplot()
+```
+
+## 探索问题2：房屋单价与区域存在什么关系？
+
+不同区域间房屋单价相差较大。
+```{r echo=FALSE}
+ggplot(lj, aes(x=property_region, y=price_sqm))+
+  geom_boxplot()+
+  coord_flip()
+```
+
+## 探索问题3：人们是否更关注房屋附近有地铁？
+
+```{r echo=FALSE}
+# 清洗数据near_subway，将所有不是异常值替换成NA
+lj_03 <- lj %>%
+  mutate(near_subway = ifelse(near_subway != "近地铁", NA, near_subway))
+
+ggplot(lj_03, aes(x=near_subway, y=followers))+
+  geom_bar(stat = "identity")
+```
+人们似乎更关注靠近地铁的房子。
+
+
